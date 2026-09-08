@@ -117,12 +117,19 @@ export default function Page() {
     setLog((l) => [...l.slice(-40), { text, kind }]);
   }, []);
 
-  const refresh = useCallback(async (id: string | null) => {
-    const r = await fetch(`/api/state${id ? `?tab=${encodeURIComponent(id)}` : ""}`, { cache: "no-store" });
-    const data = await r.json();
-    if (alive.current && r.ok) setState(data);
-    return data as State;
-  }, []);
+  const refresh = useCallback(
+    async (id: string | null) => {
+      const r = await fetch(`/api/state${id ? `?tab=${encodeURIComponent(id)}` : ""}`, { cache: "no-store" });
+      const data = await r.json();
+      // A failed read used to leave the page blank with nothing said. It is
+      // reported instead: a 503 is a deployment fault the operator must fix, a
+      // 502 is the chain being slow and worth another go.
+      if (!r.ok) say(data.error ?? `could not load state (HTTP ${r.status})`, "bad");
+      else if (alive.current) setState(data);
+      return data as State;
+    },
+    [say],
+  );
 
   useEffect(() => { void refresh(null); }, [refresh]);
 

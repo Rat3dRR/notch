@@ -81,9 +81,21 @@ function repoEnv(key: string): string | undefined {
   return undefined;
 }
 
+/**
+ * A missing key or address. Its own type because it is not a network fault and
+ * must not be reported as one: a route that answered "the network refused that
+ * write" for an unset `SELLER_KEY` sends whoever deployed it after the wrong
+ * problem entirely. This is the single most likely first-deploy failure.
+ */
+export class MissingConfig extends Error {}
+
 function required(key: string): string {
   const value = process.env[key] || repoEnv(key);
-  if (!value) throw new Error(`missing ${key} — set it in .env or the Vercel environment`);
+  if (!value) {
+    throw new MissingConfig(
+      `${key} is not set. Add it to the Vercel project environment (or .env when running locally).`,
+    );
+  }
   return value;
 }
 

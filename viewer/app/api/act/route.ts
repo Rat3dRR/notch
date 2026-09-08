@@ -10,6 +10,7 @@
  * for why the operation set is closed and why no address or amount is accepted
  * from a client.
  */
+import { MissingConfig } from "@/lib/chain";
 import { Refused, run, throttle } from "@/lib/ops";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,12 @@ export async function POST(request: Request) {
     // library or network fault, whose message can carry an endpoint or a key
     // path, so it is logged server-side and generalised for the client.
     if (e instanceof Refused) return Response.json({ error: e.message }, { status: 400 });
+    if (e instanceof MissingConfig) {
+      // A deployment problem, not a chain problem. Echoed because it names only
+      // which variable is absent, never a value.
+      console.error("act misconfigured", e.message);
+      return Response.json({ error: `Server not configured: ${e.message}` }, { status: 503 });
+    }
     console.error("act failed", e);
     return Response.json({ error: "the network refused that write" }, { status: 502 });
   }

@@ -16,7 +16,7 @@
  * §2 boundary: every field below is a contract view, rendered. Nothing here
  * computes or previews a verdict.
  */
-import { FOREVER, SETTLING, SLOWLY, read, readOrNull } from "@/lib/chain";
+import { FOREVER, MissingConfig, SETTLING, SLOWLY, read, readOrNull } from "@/lib/chain";
 import { CLAIM_KINDS } from "@/lib/ops";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +27,24 @@ type Statement = { tab_id: string; cycle: number; closed_at: string; closed_by: 
 type Dispute = { statement_id: string; claimant: string; claim_kind: string; claim: string; bond_atto: string | number; status: string; outcome: string; adjusted_atto: string | number; evidence_hash_matched: boolean; rationale: string; opened_at: string; bond_settled: boolean; notch_ids: string[]; cited: string[] };
 
 export async function GET(request: Request) {
-  const tabId = new URL(request.url).searchParams.get("tab");
+  try {
+    return Response.json(await load(new URL(request.url).searchParams.get("tab")));
+  } catch (e) {
+    // This route had no handler at all until a pre-deploy check, which meant an
+    // unset key or one bad read became a bare 500 and a page that rendered
+    // nothing with no reason given. The two causes are worth separating: a
+    // missing variable is a deployment fault the operator must fix, everything
+    // else is the chain being slow or unreachable and is worth retrying.
+    if (e instanceof MissingConfig) {
+      console.error("state misconfigured", e.message);
+      return Response.json({ error: `Server not configured: ${e.message}` }, { status: 503 });
+    }
+    console.error("state failed", e);
+    return Response.json({ error: "could not read the chain — retrying may work" }, { status: 502 });
+  }
+}
 
+async function load(tabId: string | null) {
   // The precedent corpus is GLOBAL, not per-tab (`precedent_by_kind`), so it is
   // readable with no tab at all — and worth saying plainly: every visitor's
   // ruling lands in the same index, so one visitor's second dispute may cite a
@@ -49,10 +65,10 @@ export async function GET(request: Request) {
     base_credit_atto: String(await read<string | number>("get_base_credit_atto", [], FOREVER)),
   };
 
-  if (!tabId) return Response.json({ policy, precedents });
+  if (!tabId) return { policy, precedents };
 
   const tab = await readOrNull<Tab>("get_tab", [tabId], 0);
-  if (!tab) return Response.json({ error: "no such tab", policy, precedents }, { status: 404 });
+  if (!tab) return { error: "no such tab", policy, precedents };
 
   // An open cycle's notch ids are not readable from the chain — `get_tab`
   // returns a count and no ids, and `get_statement` only exists after a close.
@@ -83,5 +99,5 @@ export async function GET(request: Request) {
     )
   ).filter(Boolean);
 
-  return Response.json({ policy, tab: { id: tabId, ...tab }, notches, statements, precedents });
+  return { policy, tab: { id: tabId, ...tab }, notches, statements, precedents };
 }
