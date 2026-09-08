@@ -35,6 +35,30 @@ them: it holds real faucet GEN and never leaves `.env`.
 | `lib/chain.ts` | signers, cached reads, receipt reading, the bond top-up |
 | `lib/preimage.ts` | the statement-hash rebuild. Runs in the browser |
 
+## Deploying
+
+Vercel, with **Root Directory set to `viewer`** in the project settings — the repo
+root is a Python contract project with no `package.json`, so Vercel detects no
+framework there and falls back to static hosting, whose default output directory
+is `public`. That produces `No Output Directory named "public" found`, which reads
+like a missing folder and is really "the Next build never ran". Root Directory
+cannot be set from `vercel.json`; it is project-settings-only.
+
+`vercel.json` pins `"framework": "nextjs"` so the same error cannot come back via
+a Framework Preset left on "Other". It takes precedence over the dashboard preset,
+but only once the root directory is right.
+
+Three environment variables, and only three: `NOTCH_ADDRESS`, `SELLER_KEY`,
+`BUYER_KEY`. **`BRADBURY_KEY` must never be set here** — it holds real faucet GEN
+on a live testnet and the app has no use for it. No `OPENAI_API_KEY` either;
+`exec_prompt` runs on GenLayer's own validators. Vercel does not apply new
+variables to an existing deployment, so redeploy after adding them.
+
+To check a deploy before clicking anything, fetch `/api/state`: it should return
+`policy.bond_atto` of `1000000000000000000`. A `503` names the missing variable, a
+`502` is the chain being slow and worth a retry, and a Vercel-branded `404` means
+the root directory is still wrong.
+
 ## Two end-to-end scripts
 
 Not part of `npm test` — they write to live StudioNet and cost minutes.
