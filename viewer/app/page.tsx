@@ -95,6 +95,14 @@ function usdc(atto: string | number | bigint): string {
 
 const short = (hex: string) => `${hex.slice(0, 6)}…${hex.slice(-4)}`;
 
+/** Format a millisecond duration as m:ss. */
+function fmtElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
 /* ------------------------------------------------------------------- page */
 
 export default function Page() {
@@ -109,9 +117,31 @@ export default function Page() {
   );
   const [picked, setPicked] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, { hash: string; preimage: string; match: boolean }>>({});
+
+  // Timer per operation: tracks elapsed since `act()` started.
+  const [stepMs, setStepMs] = useState(0);
+  const tickRef = useRef<number | null>(null);
+
   const alive = useRef(true);
 
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => () => {
+    alive.current = false;
+    if (tickRef.current) clearInterval(tickRef.current);
+  }, []);
+
+  const startTimer = useCallback(() => {
+    setStepMs(0);
+    if (tickRef.current) clearInterval(tickRef.current);
+    tickRef.current = window.setInterval(() => setStepMs((m) => m + 200), 200);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    setStepMs(0);
+  }, []);
 
   const say = useCallback((text: string, kind: "info" | "ok" | "bad" = "info") => {
     setLog((l) => [...l.slice(-40), { text, kind }]);
@@ -143,6 +173,7 @@ export default function Page() {
   const act = useCallback(
     async (body: Record<string, unknown>, label: string) => {
       setBusy(label);
+      startTimer();
       try {
         const r = await fetch("/api/act", {
           method: "POST",
@@ -185,9 +216,10 @@ export default function Page() {
         return null;
       } finally {
         if (alive.current) setBusy(null);
+        stopTimer();
       }
     },
-    [say],
+    [say, startTimer, stopTimer],
   );
 
   const openTab = async () => {
@@ -266,7 +298,15 @@ export default function Page() {
           <>
             <p>One button. Opens a tab between a seller agent and a buyer agent and bills three calls.</p>
             <button className="primary" onClick={openTab} disabled={!!busy}>
-              {busy ? busy + "…" : "Open a demo tab"}
+              {busy ? (
+                <>
+                  <span className="spinner" />
+                  <span>{busy}…  </span>
+                  <span className="timer">{fmtElapsed(stepMs)}</span>
+                </>
+              ) : (
+                "Open a demo tab"
+              )}
             </button>
           </>
         ) : (
@@ -290,14 +330,14 @@ export default function Page() {
           <div className="row">
             <label>
               Bill a call that is…
-              <select value={flavour} onChange={(e) => setFlavour(e.target.value)}>
+              <select value={flavour} onChange={(e) => setFlavour(e.target.value)} disabled={!!busy}>
                 {FLAVOURS.map((f) => (
                   <option key={f.key} value={f.key}>{f.label}</option>
                 ))}
               </select>
             </label>
-            <button onClick={() => bill(1)} disabled={!!busy}>Bill 1 more</button>
-            <button onClick={() => bill(5)} disabled={!!busy}>Bill 5 more</button>
+            <button onClick={() => bill(1)} disabled={!!busy}>{busy ? "b" + busy : "Bill 1 more"}</button>
+            <button onClick={() => bill(5)} disabled={!!busy}>{busy ? busy : "Bill 5 more"}</button>
           </div>
           <p className="hint">{FLAVOURS.find((f) => f.key === flavour)?.hint} — about 8 seconds a call, and rows appear as they land.</p>
 
@@ -322,7 +362,15 @@ export default function Page() {
             cycle, {state.tab!.notch_count} on the tab in total.
           </p>
           <button className="primary" onClick={close} disabled={!!busy || !state.notches.some((n) => n.cycle === state.tab!.cycle)}>
-            Close cycle {state.tab!.cycle}
+            {busy === "close the cycle" ? (
+              <>
+                <span className="spinner" />
+                Close cycle {state.tab!.cycle}…
+                <span className="timer">{fmtElapsed(stepMs)}</span>
+              </>
+            ) : (
+              `Close cycle ${state.tab!.cycle}`
+            )}
           </button>
         </section>
       )}
@@ -363,7 +411,16 @@ export default function Page() {
                 </div>
                 {!v ? (
                   <>
-                    <button className="primary" onClick={() => verify(s)}>Recompute this hash</button>
+                    <button className="primary" onClick={() => verify(s)} disabled={!!busy}>
+                      {busy === `verify ${s.id}` ? (
+                        <>
+                          <span className="spinner" />
+                          Recomputing… <span className="timer">{fmtElapsed(stepMs)}</span>
+                        </>
+                      ) : (
+                        "Recompute this hash"
+                      )}
+                    </button>
                     <p className="hint">
                       Rebuilt from <code>get_statement</code> alone — the view returns the tab id, the
                       cycle, the legs and the sorted notch ids, which are exactly the four fields the
@@ -372,7 +429,7 @@ export default function Page() {
                   </>
                 ) : (
                   <>
-                    <p className={v.match ? "verdict ok" : "verdict bad"}>
+                    <p className={`verdict ${v.match ? "ok" : "bad"}`}>
                       {v.match
                         ? "Match. The contract's committed hash is reproducible from its own published preimage."
                         : "Mismatch. The recomputed digest differs from the committed one."}
@@ -412,17 +469,30 @@ export default function Page() {
           <div className="row">
             <label>
               Claim kind
-              <select value={kind} onChange={(e) => setKind(e.target.value)}>
+              <select value={kind} onChange={(e) => setKind(e.target.value)} disabled={!!busy}>
                 {CLAIM_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
             </label>
           </div>
           <label className="block">
             The claim
-            <textarea value={claim} maxLength={500} rows={3} onChange={(e) => setClaim(e.target.value)} />
+            <textarea
+              value={claim}
+              maxLength={500}
+              rows={3}
+              onChange={(e) => setClaim(e.target.value)}
+              disabled={!!busy}
+            />
           </label>
           <button className="primary" onClick={() => dispute(open)} disabled={!!busy || !picked}>
-            File the dispute on {open.id}
+            {busy === "file the dispute" ? (
+              <>
+                <span className="spinner" />
+                Filing dispute… <span className="timer">{fmtElapsed(stepMs)}</span>
+              </>
+            ) : (
+              `File the dispute on ${open.id}`
+            )}
           </button>
         </section>
       )}
@@ -431,7 +501,7 @@ export default function Page() {
       {disputed?.dispute && (
         <section>
           <h2><span className="n">4</span> The ruling</h2>
-          <Ruling d={disputed.dispute} onResolve={resolve} busy={busy} />
+          <Ruling d={disputed.dispute} onResolve={resolve} busy={busy} stepMs={stepMs} />
         </section>
       )}
 
@@ -503,10 +573,12 @@ function Ruling({
   d,
   onResolve,
   busy,
+  stepMs,
 }: {
   d: Dispute;
   onResolve: (d: Dispute) => void;
   busy: string | null;
+  stepMs: number;
 }) {
   if (d.status !== "resolved") {
     return (
@@ -518,7 +590,14 @@ function Ruling({
           <div><dt>Notches</dt><dd>{d.notch_ids.map((n) => <code key={n}>{n} </code>)}</dd></div>
         </dl>
         <button className="primary" onClick={() => onResolve(d)} disabled={!!busy}>
-          Ask the validators for a ruling
+          {busy === "ask for a ruling" ? (
+            <>
+              <span className="spinner" />
+              Waiting for validators… <span className="timer">{fmtElapsed(stepMs)}</span>
+            </>
+          ) : (
+            "Ask the validators for a ruling"
+          )}
         </button>
         <p className="hint">
           This is the contract&apos;s one nondeterministic method. Validators re-fetch the evidence,
