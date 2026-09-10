@@ -336,8 +336,16 @@ export default function Page() {
                 ))}
               </select>
             </label>
-            <button onClick={() => bill(1)} disabled={!!busy}>{busy ? "b" + busy : "Bill 1 more"}</button>
-            <button onClick={() => bill(5)} disabled={!!busy}>{busy ? busy : "Bill 5 more"}</button>
+            <button onClick={() => bill(1)} disabled={!!busy}>Bill 1 more</button>
+            <button onClick={() => bill(5)} disabled={!!busy}>Bill 5 more</button>
+            {/* One progress readout beside both buttons: the label counts the call being
+                billed, so a five-call run reports which one is in flight. */}
+            {busy?.startsWith("bill call") && (
+              <span className="timer">
+                <span className="spinner" />
+                {busy}… {fmtElapsed(stepMs)}
+              </span>
+            )}
           </div>
           <p className="hint">{FLAVOURS.find((f) => f.key === flavour)?.hint} — about 8 seconds a call, and rows appear as they land.</p>
 
