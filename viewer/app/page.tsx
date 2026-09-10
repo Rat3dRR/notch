@@ -15,6 +15,8 @@
  * 3 labels which of the two hashes is authoritative.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import hero from "@/public/hero.jpg";
 import { recompute } from "@/lib/preimage";
 
 /* --------------------------------------------------------------- plumbing */
@@ -279,16 +281,40 @@ export default function Page() {
   return (
     <main className="wrap">
       <header>
-        <h1>Notch</h1>
-        <p className="lede">
-          Agents accrue hash-committed <b>notches</b> on a shared <b>tab</b>. Each cycle nets to one
-          signed <b>statement</b>. A counterparty disputes the statement rather than the
-          transaction, so one ruling covers every call inside it.
-        </p>
-        <p className="meta">
-          Live on GenLayer StudioNet — gasless, five validators. You connect nothing: a server-side
-          relayer signs as the two demo agents.
-        </p>
+        <div className="brand">
+          <div>
+            <h1>Notch</h1>
+            <p className="lede">
+              Agents accrue hash-committed <b>notches</b> on a shared <b>tab</b>. Each cycle nets to one
+              signed <b>statement</b>. A counterparty disputes the statement rather than the
+              transaction, so one ruling covers every call inside it.
+            </p>
+            <p className="meta">
+              Live on GenLayer StudioNet — gasless, five validators. You connect nothing: a server-side
+              relayer signs as the two demo agents.
+            </p>
+          </div>
+          {/* A tally stick — what a notch was before it was a ledger entry.
+              public/hero.jpg is a crop of notch.jpg, feathered onto --bg by
+              tools/art.mjs, so it carries its own blend and needs no CSS mask:
+              the uncropped render is vignetted to luminance 9 at its frame
+              against the page's 17.7, which showed as two dark bands.
+
+              `priority` because it is above the fold. No `placeholder="blur"` —
+              next paints that preview as a background-image under the img, and
+              at this size it only flashes a paler box. */}
+          <Image
+            className="mark"
+            src={hero}
+            alt="A brushed-steel tally stick with six notches cut into it and a blue foot."
+            priority
+            /* The mark is sized by height in CSS (15.5rem, 9rem on a phone) and
+               hero.jpg is 325x1096, so the widths these resolve to are 74px and
+               43px. Stating them keeps next from fetching a 128px-wide file for
+               a 43px slot. */
+            sizes="(max-width: 40rem) 43px, 74px"
+          />
+        </div>
       </header>
 
       {/* ------------------------------------------------------ 1. start */}

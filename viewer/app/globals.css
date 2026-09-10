@@ -96,6 +96,30 @@ header {
   animation: sectionIn 0.3s ease-out both;
   animation-delay: calc(var(--delay, 0) * 1ms);
 }
+
+/* Text left, mark right. The mark is sized in the second column rather than
+   floated, so the lede keeps its measure and the "Open a demo tab" button below
+   stays above the fold — the page's whole promise is ninety seconds. */
+.brand {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  align-items: center;
+}
+/* A grid item defaults to min-width:auto, so without this the text column
+   refuses to shrink past its longest unbreakable run and shoves the mark out
+   of the viewport on a narrow screen. */
+.brand > div { min-width: 0; }
+
+.mark {
+  width: auto;
+  height: 15.5rem;
+  /* No mask: public/hero.jpg is already feathered onto --bg by tools/art.mjs.
+     Doing it in the asset rather than in CSS keeps the fade clear of the bar's
+     rounded tips, which a gradient stop wide enough to hide the crop edge
+     would otherwise clip. */
+}
+
 h1 {
   font-size: 2.6rem;
   margin: 0 0 .5rem;
@@ -463,4 +487,8 @@ footer {
   .wrap { padding: 1.5rem 1rem 4rem; }
   h1 { font-size: 2rem; }
   dl.facts > div, .picker label { grid-template-columns: 1fr; }
+  /* Stays two columns: stacking would push the start button off a phone screen.
+     The mark just gets small and holds the top-right corner. */
+  .brand { gap: 1rem; align-items: start; }
+  .mark { height: 9rem; }
 }
