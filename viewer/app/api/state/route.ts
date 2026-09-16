@@ -16,7 +16,7 @@
  * §2 boundary: every field below is a contract view, rendered. Nothing here
  * computes or previews a verdict.
  */
-import { FOREVER, MissingConfig, SETTLING, SLOWLY, read, readOrNull } from "@/lib/chain";
+import { FOREVER, MissingConfig, SETTLING, SLOWLY, read, readOrNull, deployment } from "@/lib/chain";
 import { CLAIM_KINDS } from "@/lib/ops";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +45,7 @@ export async function GET(request: Request) {
 }
 
 async function load(tabId: string | null) {
+  const network = await deployment();
   // The precedent corpus is GLOBAL, not per-tab (`precedent_by_kind`), so it is
   // readable with no tab at all — and worth saying plainly: every visitor's
   // ruling lands in the same index, so one visitor's second dispute may cite a
@@ -65,10 +66,10 @@ async function load(tabId: string | null) {
     base_credit_atto: String(await read<string | number>("get_base_credit_atto", [], FOREVER)),
   };
 
-  if (!tabId) return { policy, precedents };
+  if (!tabId) return { network, policy, precedents };
 
   const tab = await readOrNull<Tab>("get_tab", [tabId], 0);
-  if (!tab) return { error: "no such tab", policy, precedents };
+  if (!tab) return { error: "no such tab", network, policy, precedents };
 
   // An open cycle's notch ids are not readable from the chain — `get_tab`
   // returns a count and no ids, and `get_statement` only exists after a close.
@@ -93,11 +94,13 @@ async function load(tabId: string | null) {
         const id = `${tabId}:${c}`;
         const s = await readOrNull<Statement>("get_statement", [id], SETTLING);
         if (!s) return null;
-        const dispute = await readOrNull<Dispute>("get_dispute", [`${id}#d`], SETTLING);
+        const dispute = ["disputed", "resolved"].includes(s.status)
+          ? await read<Dispute>("get_dispute", [`${id}#d`], SETTLING)
+          : null;
         return { id, ...s, dispute: dispute && { id: `${id}#d`, ...dispute } };
       }),
     )
   ).filter(Boolean);
 
-  return { policy, tab: { id: tabId, ...tab }, notches, statements, precedents };
+  return { network, policy, tab: { id: tabId, ...tab }, notches, statements, precedents };
 }

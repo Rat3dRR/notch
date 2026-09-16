@@ -1,11 +1,16 @@
-# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+# { "Depends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng" }
 
 import datetime
 import hashlib
 import json
 from dataclasses import dataclass
 
-from genlayer import *
+import genlayer as gl
+from genlayer.types import *
+
+DynArray = gl.storage.DynArray
+TreeMap = gl.storage.TreeMap
+allow_storage = gl.storage.allow
 
 ERROR_EXPECTED = "[EXPECTED]"
 # Spec §5's four-prefix vocabulary, kept whole. `[EXTERNAL]` is deliberately
@@ -143,7 +148,7 @@ class _Payee:
         pass
 
 
-class Notch(gl.Contract):
+class Notch(gl.contract.Contract):
     bond_atto: u256
     dispute_window_seconds: u256
     base_credit_atto: u256
@@ -250,7 +255,7 @@ class Notch(gl.Contract):
         t.creator = gl.message.sender_address
         t.cycle_seconds = cycle_seconds
         t.cycle = u256(0)
-        t.opened_at = gl.message_raw["datetime"]
+        t.opened_at = gl.message.raw["datetime"]
         for a in addrs:
             t.members.append(a)
 
@@ -375,7 +380,7 @@ class Notch(gl.Contract):
         s = self.statements.get_or_insert_default(sid)
         s.tab_id = tab_id
         s.cycle = u256(cycle)
-        s.closed_at = gl.message_raw["datetime"]
+        s.closed_at = gl.message.raw["datetime"]
         s.closed_by = gl.message.sender_address
         s.statement_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         s.status = STATUS_OPEN
@@ -428,7 +433,7 @@ class Notch(gl.Contract):
             # waits it out and files a receipt on a statement under judgment.
             # `resolve()` moves the status on, which lets finality resume.
             return False
-        now = datetime.datetime.fromisoformat(gl.message_raw["datetime"])
+        now = datetime.datetime.fromisoformat(gl.message.raw["datetime"])
         closed = datetime.datetime.fromisoformat(s.closed_at)
         # timedelta comparison, not total_seconds(): the constraints forbid
         # floats, and this is the comparison that decides finality.
@@ -646,7 +651,7 @@ class Notch(gl.Contract):
         d.adjusted_atto = u256(0)
         d.evidence_hash_matched = False
         d.rationale = ""
-        d.opened_at = gl.message_raw["datetime"]
+        d.opened_at = gl.message.raw["datetime"]
         d.bond_settled = False
         for i in notch_ids:
             d.notch_ids.append(i)
@@ -902,7 +907,7 @@ class Notch(gl.Contract):
         # ponytail: one window serves both the finality window and this retry
         # grace. A separate `evidence_grace_seconds` if a real deployment needs
         # them to differ.
-        elapsed = (datetime.datetime.fromisoformat(gl.message_raw["datetime"])
+        elapsed = (datetime.datetime.fromisoformat(gl.message.raw["datetime"])
                    - datetime.datetime.fromisoformat(d.opened_at))
         retry_live = elapsed < datetime.timedelta(
             seconds=int(self.dispute_window_seconds))
@@ -1109,13 +1114,13 @@ class Notch(gl.Contract):
         The prefixes are the whole mechanism, which is why every guard in this
         contract carries one and why their exact text is asserted by tests.
         """
-        leader_msg = getattr(leaders_res, "message", "")
+        leader_msg = str(getattr(leaders_res, "data", ""))
         try:
             leader_fn()
             # The leader failed where we succeeded. Nothing to agree about.
             return False
         except gl.vm.UserError as e:
-            mine = getattr(e, "message", str(e))
+            mine = str(e.data)
             # ponytail: no `[EXPECTED]`/`[EXTERNAL]` arm here, and spec §5's
             # "deterministic errors must match exactly" still holds — upstream,
             # by construction rather than by comparison. Every deterministic
@@ -1163,7 +1168,7 @@ class Notch(gl.Contract):
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
             return self._agree(leaders_res, leader_fn)
 
-        v = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        v = gl.vm.run_nondet(leader_fn, validator_fn)
 
         # Re-fetched across the nondet boundary rather than reusing the handle
         # taken above. Direct mode patches `run_nondet_unsafe` into a plain call,

@@ -33,7 +33,8 @@ import {
   decodeLocalnetTransaction,
   simplifyTransactionReceipt,
 } from "genlayer-js";
-import { studionet } from "genlayer-js/chains";
+import { studioDevnet } from "genlayer-js/chains";
+import { NETWORK, contractUrl } from "./network.ts";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -117,20 +118,28 @@ let cached: ReturnType<typeof build> | undefined;
 function build() {
   const seller = createAccount(required("SELLER_KEY") as Hex);
   const buyer = createAccount(required("BUYER_KEY") as Hex);
-  const address = required("NOTCH_ADDRESS") as Hex;
+  const address = required("STUDIO_NEXT_ADDRESS") as Hex;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new MissingConfig("STUDIO_NEXT_ADDRESS must be a contract address on chain 61997.");
   return {
     address,
     seller,
     buyer,
     clients: {
-      seller: createClient({ chain: studionet, account: seller }),
-      buyer: createClient({ chain: studionet, account: buyer }),
+      seller: createClient({ chain: studioDevnet, account: seller }),
+      buyer: createClient({ chain: studioDevnet, account: buyer }),
     },
   };
 }
 
 export function chain() {
   return (cached ??= build());
+}
+
+export async function deployment() {
+  const { clients, address } = chain();
+  const chainId = await clients.seller.getChainId();
+  if (chainId !== NETWORK.chainId) throw new Error(`Unexpected chain ID: ${chainId}`);
+  return { ...NETWORK, chainId, address, contractUrl: contractUrl(address), deploymentHash: process.env.STUDIO_NEXT_DEPLOY_TX || repoEnv("STUDIO_NEXT_DEPLOY_TX") || null };
 }
 
 export type Signer = "seller" | "buyer";
@@ -279,8 +288,9 @@ export const SLOWLY = 4_000;
 export async function readOrNull<T>(fn: string, args: Arg[], ttlMs: number): Promise<T | null> {
   try {
     return await read<T>(fn, args, ttlMs);
-  } catch {
-    return null;
+  } catch (e) {
+    if (/no such (tab|notch|statement|dispute|case)/i.test(String((e as Error)?.message))) return null;
+    throw e;
   }
 }
 
@@ -318,6 +328,7 @@ export type Receipt = {
  * `"[EXPECTED] duplicate notch"` and an empty stderr.
  */
 export function succeeded(receipt: Receipt): boolean {
+  if (!["ACCEPTED", "FINALIZED"].includes(receipt.status_name ?? "")) return false;
   const leader = receipt?.consensus_data?.leader_receipt?.[0];
   if (leader) return leader.execution_result === "SUCCESS";
   // The Bradbury receipt shape, kept because the same helper reads both.
@@ -397,9 +408,12 @@ export function submit(
   value: bigint = 0n,
 ): Promise<Hex> {
   const { address, clients } = chain();
-  return withLock(`signer:${signer}`, () =>
-    clients[signer].writeContract({ address, functionName: fn, args, value }),
-  ) as Promise<Hex>;
+  return withLock(`signer:${signer}`, async () => {
+    const client = clients[signer];
+    const fees = await client.estimateTransactionFees();
+    await ensureFunds(signer, value + fees.feeValue);
+    return client.writeContract({ address, functionName: fn, args, value, fees });
+  }) as Promise<Hex>;
 }
 
 /**
@@ -461,13 +475,20 @@ export async function receiptOf(hash: Hex): Promise<Receipt | null> {
  * a contract-to-EOA transfer, which is invisible until finalization.
  */
 export async function ensureBond(need: bigint): Promise<{ balance: bigint; funded: boolean }> {
-  const { buyer, clients } = chain();
-  const balance = (await clients.buyer.getBalance({ address: buyer.address })) as bigint;
+  return ensureFunds("buyer", need);
+}
+
+async function ensureFunds(signer: Signer, need: bigint): Promise<{ balance: bigint; funded: boolean }> {
+  const config = chain();
+  const account = config[signer];
+  const client = config.clients[signer];
+  const balance = await client.getBalance({ address: account.address });
   if (BigInt(balance) >= need) return { balance: BigInt(balance), funded: false };
-  await clients.buyer.request({
+  await client.request({
     method: "sim_fundAccount",
-    params: [buyer.address, Number(need * 4n)],
+    params: [account.address, `0x${(need * 4n).toString(16)}`],
   } as never);
-  const after = (await clients.buyer.getBalance({ address: buyer.address })) as bigint;
+  const after = await client.getBalance({ address: account.address });
+  if (BigInt(after) < need) throw new Error("Studio Next faucet did not fund the demo account");
   return { balance: BigInt(after), funded: true };
 }

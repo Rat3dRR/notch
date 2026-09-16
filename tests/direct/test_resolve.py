@@ -393,16 +393,19 @@ def test_non_numeric_adjusted_atto_is_an_llm_error(direct_vm, direct_deploy,
         c.resolve(did)
 
 
-def test_model_garbage_is_an_llm_error(direct_vm, direct_deploy, direct_alice,
+def test_model_garbage_is_rejected_by_sdk(direct_vm, direct_deploy, direct_alice,
                                        direct_bob):
-    """Not JSON at all: the mock leaves it a `str`, exactly as the VM would."""
+    """The v0.3 SDK rejects malformed JSON before contract verdict parsing."""
     c, sid, did = _disputed(direct_vm, direct_deploy, direct_alice, direct_bob)
     _serves(direct_vm)
     direct_vm.mock_llm(r".*", "not json at all")
 
-    with direct_vm.expect_revert("[LLM_ERROR] non-dict verdict: <class 'str'>"):
+    with direct_vm.expect_revert("invalid nondeterministic response: invalid JSON"):
         c.resolve(did)
     assert c.get_dispute(did)["status"] == "open"
+    assert c.get_dispute(did)["bond_settled"] is False
+    assert c.get_statement(sid)["status"] == "disputed"
+    assert c.preview_precedents("off_spec") == []
 
 def test_resolution_unfreezes_finality(direct_vm, direct_deploy, direct_alice,
                                        direct_bob):

@@ -29,7 +29,7 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.par
 
 from genlayer_py import create_account, create_client, generate_private_key  # noqa: E402
 from genlayer_py.chains import studionet, testnet_asimov, testnet_bradbury  # noqa: E402
-from genlayer_py.types import TransactionStatus  # noqa: E402
+from genlayer_py.types.transactions import ProtocolTransactionStatus as TransactionStatus  # noqa: E402
 
 from agents.common import (BASE_CREDIT_ATTO, BOND_ATTO, CONTRACT,  # noqa: E402
                            FUND_ATTO, WAIT_INTERVAL_MS, WAIT_RETRIES,

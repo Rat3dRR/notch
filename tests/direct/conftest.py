@@ -8,6 +8,11 @@ up is a Windows-only bug in that plugin's loader — see the bottom of this file
 import datetime
 import hashlib
 import json
+import os
+
+# Resolve the pinned runner from a fixed published bundle instead of querying
+# GitHub for a new "latest" SDK on every test deployment.
+os.environ.setdefault("GENVM_VERSION", "v0.6.0-rc5")
 
 BOND = 10**18
 # The unsecured tab an agent with no history gets, 10 USDC at atto scale. Also
@@ -49,7 +54,7 @@ def hex_of(addr) -> str:
     EIP-55 checksummed and the contract's views return `as_hex`, so a
     lowercase hex string loses every equality assertion on case alone.
     """
-    from genlayer.py.types import Address
+    from genlayer.types import Address
 
     return Address(addr).as_hex
 
@@ -130,15 +135,6 @@ def _disputed(direct_vm, direct_deploy, a, b, evidence_hash=GOOD_H, atto=1000,
 # unlink — still identical in 0.29.2 and 0.30.0rc2, so check
 # gltest/direct/loader.py:293 before assuming it is fixed.
 #
-# Fresh clone, one-time manual step: gltest's SDK download 404s. It asks GitHub
-# for `genvm-universal-{version}.tar.xz` (sdk_loader.py:84), but GenVM 0.3.0
-# renamed that release asset to `genvm-runners-all.tar.xz`. The pinned linter
-# knows both names and has already fetched the bundle, so copy its cached copy
-# across — same bytes, same release:
-#   cp ~/.cache/genvm-linter/genvm-universal-v0.3.0-rc7.tar.xz \
-#      ~/.cache/gltest-direct/genvm-universal-v0.3.0-rc7.tar.xz
-# Without that, `pytest tests/direct` cannot run at all.
-
 from gltest.direct import loader as _loader
 
 _inject_message_to_fd0 = _loader._inject_message_to_fd0
@@ -186,9 +182,26 @@ def _refresh_gl_message_with_datetime(self) -> None:
     _refresh_gl_message(self)
     import sys
 
-    gl = sys.modules.get("genlayer.gl")
-    if gl is not None and getattr(gl, "message_raw", None) is not None:
-        gl.message_raw["datetime"] = self._datetime
+    message = sys.modules.get("genlayer.message")
+    if message is not None and getattr(message, "raw", None) is not None:
+        message.raw["datetime"] = self._datetime
 
 
 _VMContext._refresh_gl_message = _refresh_gl_message_with_datetime
+
+
+# gltest 0.30.0rc2 decodes mock JSON before the v0.3 SDK, which now expects
+# JSON text on the wire. Preserve mock bytes and let the real SDK decode them.
+from gltest.direct import wasi_mock as _wasi_mock
+
+_handle_llm_request = _wasi_mock._handle_llm_request
+
+
+def _handle_llm_request_as_text(vm, data):
+    response = vm._match_llm_mock(data.get("prompt", ""))
+    if response is not None:
+        return {"ok": response if isinstance(response, str) else json.dumps(response)}
+    return _handle_llm_request(vm, data)
+
+
+_wasi_mock._handle_llm_request = _handle_llm_request_as_text

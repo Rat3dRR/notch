@@ -1,163 +1,158 @@
 # Notch
 
-A clearing layer for agent commerce: agents stop paying per call and accrue
-**notches** on a shared **tab**, each cycle **nets** to one signed
-**statement**, and a counterparty disputes the statement rather than the
-transaction — so one ruling covers ten thousand calls.
+**By Rat3dRR + Claude.** [Live app](https://www.notch.bond) | [Specification](docs/spec.md)
 
-See [`docs/spec.md`](docs/spec.md) for the full spec.
+Notch is a shared bill for AI agents. Many small service charges become one
+verifiable statement. When a buyer disputes a delivery, GenLayer validators
+compare the agreed terms with the receipt and record a binding contract outcome.
+Neither the buyer, seller, nor the website decides the dispute alone.
 
-## Deployed
+## Required Studio Next Deployment
 
-| Network | Address | Source deployed |
-|---|---|---|
-| studionet (interactive demo) | `0x266a61216466477ADF4dcFdAd09972Eb64DaCEd8` | full, 68,837 B |
-| Testnet Bradbury / Asimov | `0xf0610384850FE66E2Ee05200D4Af4E30d67746Db` | comments stripped, 39,838 B |
+The live app calls **Studio Next / Studio-dev, chain ID 61997**, through
+`https://studio-dev.genlayer.com/api` using the SDK's `studioDevnet` preset.
 
-Both with `bond_atto = 1 GEN`, `dispute_window_seconds = 3600`,
-`base_credit_atto = 10 USDC`, all three read back from the chain after deploy.
-[Bradbury explorer](https://explorer-bradbury.genlayer.com/address/0xf0610384850FE66E2Ee05200D4Af4E30d67746Db).
+- Contract: [`0xbedf544340c72383d16C2eE6bcA180a6A6C25C29`](https://explorer-studio-dev.genlayer.com/address/0xbedf544340c72383d16C2eE6bcA180a6A6C25C29)
+- Deployment: [`0x049ca081167554b36e28a0c570869c7cc99169c28ac0617e2a6956e74a235cec`](https://explorer-studio-dev.genlayer.com/tx/0x049ca081167554b36e28a0c570869c7cc99169c28ac0617e2a6956e74a235cec)
+- Read-back configuration: 1 GEN dispute bond, 3,600-second dispute window,
+  10 USDC base credit at atto scale.
 
-Two things about the testnet deployment, stated because they are real
-qualifications rather than footnotes:
+Older StudioNet and Bradbury deployments are historical and do not satisfy the
+Studio Next requirement. The Python `deploy/` and `agents/` scripts target those
+older networks; the supported submission reproduction path is the viewer below.
 
-- **Bradbury and Asimov are the same chain.** Both report chain id 4221 and
-  return an *identical block hash* at the same height, so one deploy covers both
-  names.
-- **The testnet copy has its `#` comments stripped**, because the full source
-  does not fit. Bradbury is a ZK rollup with a per-block pubdata budget measured
-  at **~53 KB**, and the contract is 68,837 bytes — `eth_estimateGas` refuses
-  with `BlockPubdataLimitReached` on every attempt. Removing comments (24,923
-  bytes) gets it to 39,838. **Every docstring is kept**, so the deployed module
-  still carries its reasoning, and the transform is deterministic — regenerate it
-  from the repo with `agents/common.py:testnet_source()` and diff. Behaviour is
-  identical, not assumed: the stripped build lints to the same
-  `Methods: 21 (13 view, 8 write)` and passes all 110 direct-mode tests.
-  `contracts/notch.py` itself is untouched.
+## Review In A Few Minutes
 
-## Quickstart
+Open [notch.bond](https://www.notch.bond). No wallet or model API key is needed.
+Two server-held demo accounts sign real Studio Next transactions. These are
+testnet billing records, not USDC transfers or production escrow.
+
+1. Select **Open a demo tab**. It records two delivered calls and one off-spec call.
+2. Close the cycle and recompute its statement hash. The browser independently
+   rebuilds the bill's fingerprint and compares it with contract storage.
+3. Select the receipt ending in `-n2`, keep the off-spec claim, and file a dispute.
+4. Ask the validators for a ruling. Consensus can take several minutes. Inspect
+   the outcome, rationale, evidence hash match, disputed amount, and bond credit.
+5. Bill another off-spec call and repeat in the next cycle. Rulings become shared
+   case history; later judgments can cite relevant cases.
+
+The app displays its contract and deployment links, full transaction hashes,
+execution status, and explorer links. Your transaction log persists in your
+browser; the tab ID is in the URL. The **Verified example** also exposes a fixed
+set of successful transaction links for reviewers on a fresh browser.
+
+For immediate inspection, open the [completed demo](https://www.notch.bond/?tab=dmu4qe73g22di).
+On September 16, 2026 (UTC), all six writes executed successfully. The statement
+hash was independently verified, the evidence hash matched, and validators
+**upheld** the off-spec claim with zero owed for the disputed call. The contract
+stored the rationale, settled the bond credit, and indexed the precedent.
+[Ruling transaction](https://explorer-studio-dev.genlayer.com/tx/0x2c11a1e821c52484027d2000d0fd39e4f83e93d4fe4ec9a72e30ca897a74ad2d).
+
+## Why Decentralized Judgment Matters
+
+A receipt can be authentic but still describe failed work. A hash establishes
+that the evidence was not changed; it cannot decide whether an upstream timeout
+met a promise to return extracted line items. The contract's leader evaluates
+the evidence and terms, while validators independently evaluate the claim and
+check agreement on the outcome, amount, integrity result, and allowed citations.
+
+Use **Billed, but off spec** to exercise this model path. The swapped-evidence
+example deliberately resolves through an integrity check without consulting a
+model. An unreachable receipt can also bypass model judgment; inspect
+`evidence_hash_matched`, not just the word `upheld`.
+
+## What Is Implemented
+
+- Persistent tabs, immutable charges, netted statements, and independently
+  reproducible statement hashes.
+- Disputes restricted to the payer, valid statement charges, the dispute window,
+  and a sufficient native GEN bond; duplicate disputes and resolutions are refused.
+- Evidence hashing, structured verdict validation, bounded adjusted amounts,
+  validated precedent citations, and consensus comparison.
+- Stored rulings, bond credits, shared precedent indexes, settlement records,
+  and credit history. The hosted viewer exposes the billing/dispute flow;
+  withdrawal and settlement are separate contract methods.
+- A relayer with a closed operation set, fixed demo identities and amounts,
+  receipt execution checks, read caching, and transaction tracking.
+
+These are implemented in [contracts/notch.py](contracts/notch.py) and
+[viewer/lib/ops.ts](viewer/lib/ops.ts), beyond a generated contract or UI scaffold.
+
+## Reproduce Locally
+
+Use Node.js **22.18+** (or 24+) and npm. TypeScript tools rely on Node's native
+type stripping. From a fresh clone:
+
+```bash
+git clone https://github.com/Rat3dRR/notch.git
+cd notch/viewer
+npm ci
+node tools/init-demo.mjs
+npm test
+npm run build
+npm run dev
+```
+
+Open `http://localhost:3000`. The init tool creates the repository `.env` with
+two fresh throwaway private keys and the public Studio Next address. It refuses
+to overwrite an existing `.env`. Keys stay server-side and are gitignored.
+The Studio faucet RPC funds the demo accounts as needed for fees and bonds.
+
+To deploy your own copy, from `viewer/`:
+
+```bash
+node tools/deploy-studio.mjs --deploy
+```
+
+It checks chain ID, funds the demo accounts, estimates fees, submits the full
+contract, checks execution success, and reads back constructor values. Put the
+printed `STUDIO_NEXT_ADDRESS` and `STUDIO_NEXT_DEPLOY_TX` into the repository
+`.env`, then restart the viewer. A printed transaction hash can be passed instead
+of `--deploy` to resume verification without submitting another contract.
+
+Run the same public API flow as the app, including a real model judgment:
+
+```bash
+# From viewer/. This writes testnet state and prints each explorer link.
+node --dns-result-order=ipv4first tools/verify-live.mjs https://www.notch.bond
+# Or target your locally running viewer:
+node tools/verify-live.mjs http://localhost:3000
+```
+
+The script fails if execution fails, the statement hash differs, the evidence
+does not match, the ruling is missing, or the precedent was not persisted.
+
+## Contract Tests
+
+Use Python 3.12 in a virtual environment and install `requirements.txt`.
+From the repository root, with that environment activated:
 
 ```bash
 pip install -r requirements.txt
-
-# gate: both must be green
-PYTHONIOENCODING=utf-8 .venv/Scripts/genvm-lint.exe check contracts/notch.py
-PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe -m pytest tests/direct -q
+genvm-lint check contracts/notch.py
+python -m pytest tests/direct -q
 ```
 
-`PYTHONIOENCODING=utf-8` is required on Windows — the contract's comments carry
-em-dashes and `§`.
+On Windows, set `$env:PYTHONIOENCODING='utf-8'` first. The first run downloads
+the GenVM runner bundle; it needs network access and disk space. Direct tests
+mock model and web responses; the live verification above tests real consensus.
 
-## Run the two agents
+## Deploy The Viewer
 
-```bash
-.venv/Scripts/python.exe deploy/deploy.py        # prints 3 lines for .env
-.venv/Scripts/python.exe agents/seller.py        # bills 25 calls
-.venv/Scripts/python.exe agents/buyer.py         # nets, verifies, disputes, rules
-```
+In Vercel, set Root Directory to `viewer` and Framework Preset to Next.js.
+Configure `SELLER_KEY`, `BUYER_KEY`, `STUDIO_NEXT_ADDRESS`, and
+`STUDIO_NEXT_DEPLOY_TX`, then deploy. With the project linked locally, run
+`vercel --prod` **from the repository root**, since Vercel applies `viewer` itself.
+Do not upload `.env` or set a model API key or `BRADBURY_KEY` in Vercel.
 
-Paste the printed `NOTCH_ADDRESS` / `SELLER_KEY` / `BUYER_KEY` into `.env` (see
-[`.env.example`](.env.example)). studionet is gasless, so nothing needs a
-faucet — `deploy.py` funds both accounts with 20 GEN because the dispute bond is
-real attached value.
+## Demo Boundaries
 
-Then **run both again**. The second dispute is judged against the first, and the
-verdict cites it. That is the precedent flywheel.
+One dispute is allowed per statement. Bond credit requires a separate withdrawal;
+the viewer does not withdraw funds. Credit is derived from settlement history
+and is not an enforced spending cap. Demo accounts are shared by public visitors,
+and the hosted network can throttle requests or delay consensus.
 
-### What a real run looks like
-
-Measured on studionet with five validators, not estimated:
-
-```
-2. recomputing the statement hash off-chain
-   on-chain a2b93f8b56b10d11e4f8d86c03dfcb4516830bae83acc04c1207a851abe3d3d9
-   rebuilt  a2b93f8b56b10d11e4f8d86c03dfcb4516830bae83acc04c1207a851abe3d3d9
-   MATCH. 12 calls collapse to one number anyone can check.
-
-3. disputing one notch: demo-c1-n11
-   evidence receipt-off-spec.json
-   bond     1 GEN attached
-
-   prior rulings the judge will see: 1
-     demo:0#d  upheld  hash_matched=True
-
-4. resolving demo:1#d under five-validator consensus
-   outcome              upheld
-   evidence_hash_matched True
-     -> the hash checked out, so the model was asked on the merits
-   rationale            The invoice evidence clearly shows TOTAL 0.00, qty 0,
-                        and an upstream timeout error with no content returned.
-                        [...] This matches the prior ruling in demo:0#d where an
-                        off_spec claim with identical characteristics
-   cited_case_ids       ['demo:0#d']
-
-5. the bond
-   buyer    19 -> 20 GEN (delta +1)
-   contract 1 -> 0 GEN
-   PAID. 1 GEN left the contract and arrived.
-```
-
-The judge cited the earlier case by id, and the bond left the contract and
-arrived at an EOA.
-
-### Timing, so nothing here is a surprise
-
-| Step | Measured |
-|---|---|
-| one `add_notch` | 13–15s to ACCEPTED (40 consecutive writes, 9–18s each) |
-| `close` at 40 notches | 17s |
-| `resolve`, hash short-circuit | seconds — no model is consulted |
-| `resolve`, model path | 26s and 141s across the two demo runs |
-| `withdraw` to FINALIZED | 40s |
-
-Every figure above is from a run, not an estimate. `resolve` on the model path
-is the one with real spread: the same code path took 141s and then 26s, so treat
-it as "tens of seconds to a couple of minutes" rather than a number to plan
-against. (Task 8's real-model integration test saw ~250s on a heavier prompt.)
-
-`agents/seller.py --calls 200` is the plan's full scale, but **it will not finish
-in one run**: studionet allows 60 req/min, **1000 req/hour** and 10,000/day, and
-each notch costs about seven requests (one submit, four or five receipt polls,
-one resumability read). That is ~1,400 requests over ~43 minutes, so the *hourly*
-limit is reached around notch 140 and further calls are rejected with `-32429`
-until the window resets. The default is 25 (~175 requests). Both agents are
-resumable, so a 200-notch run is two passes an hour apart rather than one long
-one.
-
-The claim does not rest on the count: one statement, one hash and one ruling cover
-the cycle whether that is 25 calls or ten thousand — the number only changes how
-long you wait to watch it.
-
-Both agents are **resumable**. studionet drops a connection occasionally, and
-`add_notch` refuses a duplicate id, so a rerun skips what it already billed
-rather than dying on `duplicate notch`.
-
-To deploy to the public testnet instead:
-
-```bash
-# fund an address first -- https://testnet-faucet.genlayer.foundation/
-# (100 GEN per 24h, browser only: it is behind Cloudflare Turnstile)
-.venv/Scripts/python.exe deploy/deploy.py --network bradbury
-```
-
-## Verify a statement yourself
-
-`close()` commits `sha256` over a preimage of **content only, no timestamps** —
-`{tab, cycle, sorted notch ids, legs}`, JSON with sorted keys and no spaces — so
-anyone holding the parts can rebuild the number. `agents/buyer.py` does exactly
-that at step 2 and prints both hashes; `agents/common.py:statement_hash` is the
-nine lines that do it, deliberately a *second* implementation of the contract's,
-with `tests/direct/test_agent_hash.py` pinning the two together.
-
-## Deliberate simplifications
-
-Marked `ponytail:` in the source. The ones that shape what you can do:
-
-- **`credit_limit` is read-only.** Settlement history derives the number; nothing
-  in `add_notch` enforces it as a cap.
-- **One dispute per statement.** The dispute id is derived (`{statement_id}#d`),
-  not counted.
-- **Win/lose is binary**, even for `adjusted` — a partial win takes the whole
-  bond.
-- **A statement settled by silence builds no credit history.** Silence makes the
-  netting binding (§4); it is not enough to build a reputation (§3).
+Evidence URLs are pinned to a public Git commit. The `evidence-fixtures-v1` tag
+keeps that original commit reachable when author identities are corrected. Do
+not delete it or make the repository private: previously billed evidence URLs
+are immutable on chain.

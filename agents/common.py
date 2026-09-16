@@ -26,7 +26,7 @@ import time
 
 from genlayer_py import create_account, create_client
 from genlayer_py.chains import studionet
-from genlayer_py.types import TransactionStatus
+from genlayer_py.types.transactions import ProtocolTransactionStatus as TransactionStatus
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CONTRACT = REPO / "contracts" / "notch.py"

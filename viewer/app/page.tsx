@@ -18,6 +18,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import hero from "@/public/hero.jpg";
 import { recompute } from "@/lib/preimage";
+import { NETWORK, transactionUrl } from "@/lib/network";
+import { VERIFIED_DEMO } from "@/lib/verified-demo";
 
 /* --------------------------------------------------------------- plumbing */
 
@@ -70,6 +72,7 @@ type Precedent = {
 };
 
 type State = {
+  network: { name: string; chainId: number; address: string; contractUrl: string; deploymentHash: string | null };
   policy: { bond_atto: string; dispute_window_seconds: number; base_credit_atto: string };
   tab?: { id: string; cycle: number; notch_count: number; members: string[]; opened_at: string };
   notches?: Notch[];
@@ -78,6 +81,8 @@ type State = {
 };
 
 const CLAIM_KINDS = ["not_delivered", "off_spec", "overcharged", "duplicate", "sla_breach"];
+type Transaction = { hash: string; label: string; status: string };
+const HISTORY_KEY = "notch:studio-next:transactions:v1";
 
 const FLAVOURS = [
   { key: "good", label: "Delivered as billed", hint: "evidence matches its committed hash" },
@@ -112,6 +117,7 @@ export default function Page() {
   const [state, setState] = useState<State | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<{ text: string; kind: "info" | "ok" | "bad" }[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [flavour, setFlavour] = useState("off_spec");
   const [kind, setKind] = useState("off_spec");
   const [claim, setClaim] = useState(
@@ -126,9 +132,22 @@ export default function Page() {
 
   const alive = useRef(true);
 
-  useEffect(() => () => {
-    alive.current = false;
-    if (tickRef.current) clearInterval(tickRef.current);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (tickRef.current) clearInterval(tickRef.current);
+    };
+  }, []);
+
+  const recordTransaction = useCallback((entry: Transaction) => {
+    setTransactions((previous) => {
+      const next = previous.some((t) => t.hash === entry.hash)
+        ? previous.map((t) => t.hash === entry.hash ? entry : t)
+        : [...previous, entry];
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
   }, []);
 
   const startTimer = useCallback(() => {
@@ -156,14 +175,22 @@ export default function Page() {
       // A failed read used to leave the page blank with nothing said. It is
       // reported instead: a 503 is a deployment fault the operator must fix, a
       // 502 is the chain being slow and worth another go.
-      if (!r.ok) say(data.error ?? `could not load state (HTTP ${r.status})`, "bad");
+      if (!r.ok || data.error) say(data.error ?? `could not load state (HTTP ${r.status})`, "bad");
       else if (alive.current) setState(data);
       return data as State;
     },
     [say],
   );
 
-  useEffect(() => { void refresh(null); }, [refresh]);
+  useEffect(() => {
+    const savedTab = new URLSearchParams(window.location.search).get("tab");
+    if (savedTab && /^d[0-9a-z]{8,24}$/.test(savedTab)) setTab(savedTab);
+    try {
+      const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (Array.isArray(saved)) setTransactions(saved.filter((t) => /^0x[0-9a-fA-F]{64}$/.test(t?.hash) && typeof t.label === "string" && typeof t.status === "string"));
+    } catch { /* no saved history */ }
+    void refresh(savedTab).catch(() => say("Could not reach the app. Please refresh and try again.", "bad"));
+  }, [refresh, say]);
 
   /**
    * Submit one operation and wait for it by polling.
@@ -188,6 +215,7 @@ export default function Page() {
           return null;
         }
         say(`${label} submitted — ${short(submitted.hash)}, awaiting consensus`);
+        recordTransaction({ hash: submitted.hash, label, status: "Awaiting consensus" });
         if (submitted.note) say(submitted.note);
 
         // Poll. There is no queue position to report: studionet's deployed
@@ -198,15 +226,18 @@ export default function Page() {
           await new Promise((r) => setTimeout(r, 4000));
           const tx = await (await fetch(`/api/tx?hash=${submitted.hash}`, { cache: "no-store" })).json();
           if (tx.state === "ok") {
+            recordTransaction({ hash: submitted.hash, label, status: `${tx.status || "ACCEPTED"}: execution succeeded` });
             say(`${label} accepted`, "ok");
             return submitted;
           }
           if (tx.state === "refused") {
+            recordTransaction({ hash: submitted.hash, label, status: `${tx.status || "Decided"}: contract refused` });
             // The contract's own guard text, which is worth showing verbatim.
             say(`${label} refused by the contract: ${tx.error}`, "bad");
             return null;
           }
           if (tx.state === "stalled") {
+            recordTransaction({ hash: submitted.hash, label, status: tx.status || "Consensus stalled" });
             // Decided, but the validators did not agree. Not the contract's
             // doing, so it is not reported as a refusal.
             say(`${label}: ${tx.error}`, "bad");
@@ -215,19 +246,24 @@ export default function Page() {
           if (i === 7) say(`still waiting on ${label} — a leader can take a minute to pick it up`);
         }
         say(`${label}: gave up waiting; the transaction may still land`, "bad");
+        recordTransaction({ hash: submitted.hash, label, status: "Confirmation unknown; check explorer" });
+        return null;
+      } catch {
+        say(`${label}: connection interrupted. Check the transaction record before retrying.`, "bad");
         return null;
       } finally {
         if (alive.current) setBusy(null);
         stopTimer();
       }
     },
-    [say, startTimer, stopTimer],
+    [say, startTimer, stopTimer, recordTransaction],
   );
 
   const openTab = async () => {
     const done = await act({ op: "open_tab" }, "open a tab");
     if (!done) return;
     setTab(done.expect.tab);
+    window.history.replaceState(null, "", `?tab=${encodeURIComponent(done.expect.tab)}`);
     await refresh(done.expect.tab);
     // Seed a few notches so the next section is not empty. The plan's ninety
     // seconds only survives if the first hop is short.
@@ -275,7 +311,7 @@ export default function Page() {
 
   const open = state?.statements?.find((s) => s.status === "open") ?? null;
   const latest = state?.statements?.[state.statements.length - 1] ?? null;
-  const disputed = state?.statements?.find((s) => s.dispute) ?? null;
+  const disputed = state?.statements?.findLast((s) => s.dispute) ?? null;
   const bond = state?.policy ? usdc(state.policy.bond_atto) : "1";
 
   return (
@@ -285,13 +321,13 @@ export default function Page() {
           <div>
             <h1>Notch</h1>
             <p className="lede">
-              Agents accrue hash-committed <b>notches</b> on a shared <b>tab</b>. Each cycle nets to one
-              signed <b>statement</b>. A counterparty disputes the statement rather than the
-              transaction, so one ruling covers every call inside it.
+              A shared bill for AI agents. Notch combines many small service charges into one
+              statement. When a buyer says the work was not delivered as promised, GenLayer
+              validators judge the evidence and record the outcome.
             </p>
             <p className="meta">
-              Live on GenLayer StudioNet — gasless, five validators. You connect nothing: a server-side
-              relayer signs as the two demo agents.
+              {NETWORK.name} · Chain {NETWORK.chainId}. No wallet needed: two funded demo agents
+              sign the transactions. Amounts are demo billing records; this app does not transfer USDC.
             </p>
           </div>
           {/* A tally stick — what a notch was before it was a ledger entry.
@@ -315,7 +351,25 @@ export default function Page() {
             sizes="(max-width: 40rem) 43px, 74px"
           />
         </div>
+        <details>
+          <summary>Why does this need GenLayer?</summary>
+          <p>A receipt can be unchanged yet still show that the promised work failed. Checking its
+            fingerprint proves it was not swapped; judging whether it meets the agreed terms needs
+            interpretation. Independent GenLayer validators evaluate that claim and compare their
+            answers, so neither the buyer, seller, nor this website decides alone.</p>
+          <p>The contract keeps the charges, statements, disputes, bond credits and past rulings.
+            It checks who may dispute, the evidence fingerprint and the allowed result before
+            storing a decision. Later disputes can use relevant past rulings.</p>
+        </details>
+        <div className="network-proof">
+          <strong>{state?.network ? "Connected to Studio Next" : "Connecting to Studio Next..."}</strong>
+          {state?.network && <>
+            <a className="hash" href={state.network.contractUrl} target="_blank" rel="noreferrer">Contract: {state.network.address}</a>
+            {state.network.deploymentHash && <a className="hash" href={transactionUrl(state.network.deploymentHash)} target="_blank" rel="noreferrer">Deployment transaction: {state.network.deploymentHash}</a>}
+          </>}
+        </div>
       </header>
+      <p className="meta">By <a href="https://github.com/Rat3dRR/notch" target="_blank" rel="noreferrer">Rat3dRR + Claude</a>.</p>
 
       {/* ------------------------------------------------------ 1. start */}
       <section>
@@ -323,7 +377,7 @@ export default function Page() {
         {!tab ? (
           <>
             <p>One button. Opens a tab between a seller agent and a buyer agent and bills three calls.</p>
-            <button className="primary" onClick={openTab} disabled={!!busy}>
+            <button className="primary" onClick={openTab} disabled={!!busy || !state?.network}>
               {busy ? (
                 <>
                   <span className="spinner" />
@@ -343,6 +397,39 @@ export default function Page() {
             <div><dt>Cycle</dt><dd>{state?.tab?.cycle ?? 0}</dd></div>
           </dl>
         )}
+      </section>
+
+      <details className="walkthrough">
+        <summary>The demo in a few minutes</summary>
+        <ol>
+          <li>Open a demo tab. Two successful calls and one failed delivery are billed.</li>
+          <li>Close the cycle, then recompute the statement hash. Matching fingerprints verify the published bill.</li>
+          <li>Select the receipt ending in <code>-n2</code>, keep the off-spec claim, and file the dispute.</li>
+          <li>Ask the validators for a ruling. Read the decision, remaining disputed amount and bond credit. This step can take several minutes.</li>
+          <li>Bill another off-spec call and repeat. The new ruling joins the shared case history.</li>
+        </ol>
+        <p>The swapped-evidence example is a separate integrity check: it resolves without AI judgment.
+          Use the off-spec example to see decentralized judgment.</p>
+      </details>
+
+      <section className="transactions" aria-label="Transaction history">
+        <h2>Transaction record</h2>
+        {state?.network.address.toLowerCase() === VERIFIED_DEMO.address.toLowerCase() && <details>
+          <summary>Verified example: off-spec claim upheld</summary>
+          <p><a href={`/?tab=${VERIFIED_DEMO.tab}`}>View the completed demo</a>. The evidence fingerprint matched,
+            validators judged the delivery terms, and the contract recorded the ruling and bond credit.
+            Verified on September 16, 2026 (UTC).</p>
+          <ol>{VERIFIED_DEMO.transactions.map((t) => <li key={t.hash}>
+            <strong>{t.label}</strong>
+            <a className="hash" href={transactionUrl(t.hash)} target="_blank" rel="noreferrer">{t.hash}</a>
+          </li>)}</ol>
+        </details>}
+        {transactions.length === 0 ? <p className="hint">No demo transactions submitted in this browser yet.</p> :
+          <ol>{transactions.map((t) => <li key={t.hash}>
+            <div><strong>{t.label}</strong><span className="hint">{t.status}</span></div>
+            <a className="hash" href={transactionUrl(t.hash)} target="_blank" rel="noreferrer">{t.hash}</a>
+          </li>)}</ol>}
+        {tab && <button onClick={() => void refresh(tab).catch(() => say("Could not refresh chain state.", "bad"))} disabled={!!busy}>Refresh chain state</button>}
       </section>
 
       {/* -------------------------------------------------------- 2. tab */}
@@ -373,7 +460,7 @@ export default function Page() {
               </span>
             )}
           </div>
-          <p className="hint">{FLAVOURS.find((f) => f.key === flavour)?.hint} — about 8 seconds a call, and rows appear as they land.</p>
+          <p className="hint">{FLAVOURS.find((f) => f.key === flavour)?.hint}. Rows appear after the network accepts each charge.</p>
 
           <table>
             <thead>
@@ -657,7 +744,7 @@ function Ruling({
         )}
       </div>
       <dl className="facts">
-        <div><dt>Amount that stands</dt><dd>{usdc(d.adjusted_atto)} USDC</dd></div>
+          <div><dt>Disputed amount that stands</dt><dd>{usdc(d.adjusted_atto)} USDC</dd></div>
         <div><dt>Bond</dt><dd>{d.bond_settled ? "settled — credited to the winner" : "not yet settled"}</dd></div>
         <div>
           <dt>Cited</dt>

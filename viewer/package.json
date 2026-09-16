@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "genlayer-js": "1.1.8",
+    "genlayer-js": "2.0.0-rc.1",
     "next": "15.5.25",
     "react": "19.1.0",
     "react-dom": "19.1.0"

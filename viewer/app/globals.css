@@ -123,7 +123,7 @@ header {
 h1 {
   font-size: 2.6rem;
   margin: 0 0 .5rem;
-  letter-spacing: -.02em;
+  letter-spacing: 0;
   font-weight: 700;
 }
 .lede {
@@ -289,7 +289,7 @@ dd { margin: 0; font-size: .9rem; }
 
 .card {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 1rem 1.25rem;
   margin: 1rem 0;
   background: var(--surface-2);
@@ -427,7 +427,7 @@ blockquote footer { color: var(--text-dim); font-size: .8rem; margin-top: .5rem;
 
 .log {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 1rem 1.25rem;
   margin-top: 2rem;
   background: var(--surface-2);
@@ -491,4 +491,20 @@ footer {
      The mark just gets small and holds the top-right corner. */
   .brand { gap: 1rem; align-items: start; }
   .mark { height: 9rem; }
+}
+
+a { color: var(--accent); }
+.network-proof { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.network-proof .hash { margin-top: .4rem; }
+.transactions ol { list-style: none; padding: 0; margin: 0 0 1rem; }
+.transactions li { padding: .7rem 0; border-bottom: 1px solid var(--line); }
+.transactions li > div { display: flex; flex-wrap: wrap; gap: .4rem 1rem; justify-content: space-between; }
+.transactions .hash { margin-top: .3rem; }
+.walkthrough { padding: .5rem 0; }
+.walkthrough li { margin-bottom: .5rem; }
+button, dd, td, h3, .log li { overflow-wrap: anywhere; }
+.card h3 { flex-wrap: wrap; }
+@media (max-width: 40rem) {
+  table { display: block; overflow-x: auto; }
+  .hash { font-size: .72rem; }
 }

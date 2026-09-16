@@ -1,17 +1,19 @@
 # viewer
 
-The hosted app. A visitor with no wallet and no tokens drives the whole loop:
+The hosted app at [notch.bond](https://www.notch.bond). A visitor with no wallet and no tokens drives the whole loop:
 open a tab, accrue notches, close a statement, **recompute its hash in the
 browser**, file a dispute, read the verdict and the case law it cited.
 
-Onboarding is the design problem, and StudioNet solves it: the network is
-gasless, and writes go through a server-side relayer that signs as the two demo
-agents. The visitor connects nothing.
+The production viewer uses Studio Next / Studio-dev (chain ID 61997). Writes go
+through a server-side relayer that signs as the two demo agents. The visitor
+connects nothing. The app displays the deployed contract, deployment transaction,
+and every transaction hash as direct Studio Next explorer links.
 
 ## Run it
 
 ```bash
-npm install
+npm ci
+node tools/init-demo.mjs # fresh checkout only; refuses to overwrite ../.env
 npm test          # the preimage rebuild, pinned to a Python-generated fixture
 npm run typecheck
 npm run build
@@ -19,8 +21,8 @@ npm run dev       # http://localhost:3000
 ```
 
 Keys come from the repo's `.env` (one level up) when running locally, and from
-the project environment on Vercel. Three are needed — `NOTCH_ADDRESS`,
-`SELLER_KEY`, `BUYER_KEY` — and `BRADBURY_KEY` is deliberately **not** one of
+the project environment on Vercel. Four are needed — `STUDIO_NEXT_ADDRESS`,
+`STUDIO_NEXT_DEPLOY_TX`, `SELLER_KEY`, and `BUYER_KEY` — and `BRADBURY_KEY` is deliberately **not** one of
 them: it holds real faucet GEN and never leaves `.env`.
 
 ## Shape
@@ -48,8 +50,8 @@ cannot be set from `vercel.json`; it is project-settings-only.
 a Framework Preset left on "Other". It takes precedence over the dashboard preset,
 but only once the root directory is right.
 
-Three environment variables, and only three: `NOTCH_ADDRESS`, `SELLER_KEY`,
-`BUYER_KEY`. **`BRADBURY_KEY` must never be set here** — it holds real faucet GEN
+Four environment variables are used: `STUDIO_NEXT_ADDRESS`,
+`STUDIO_NEXT_DEPLOY_TX`, `SELLER_KEY`, and `BUYER_KEY`. **`BRADBURY_KEY` must never be set here** — it holds real faucet GEN
 on a live testnet and the app has no use for it. No `OPENAI_API_KEY` either;
 `exec_prompt` runs on GenLayer's own validators. Vercel does not apply new
 variables to an existing deployment, so redeploy after adding them.
@@ -59,19 +61,18 @@ To check a deploy before clicking anything, fetch `/api/state`: it should return
 `502` is the chain being slow and worth a retry, and a Vercel-branded `404` means
 the root directory is still wrong.
 
-## Two end-to-end scripts
+## Live Verification
 
-Not part of `npm test` — they write to live StudioNet and cost minutes.
+Not part of `npm test`: this writes real Studio Next state and may take minutes.
 
 ```bash
-node test/drive.mjs                      # all five screens, from a fresh tab
-node test/flywheel.mjs <tab-id>          # the model path + precedent citation
+node --dns-result-order=ipv4first tools/verify-live.mjs https://www.notch.bond
 ```
 
-`drive.mjs` disputes the swapped-evidence notch, so it exercises the
-deterministic short-circuit where **no model is consulted**. `flywheel.mjs`
-disputes the off-spec notch, where the evidence hashes correctly and the model
-has to rule — a different code path, and the slow one (measured 84.7s).
+The script verifies chain 61997, execution success, the statement hash, a matching
+evidence hash, a stored model judgment, and a persisted precedent. It prints every
+transaction hash and explorer link. See the [root README](../README.md) for the
+complete reviewer walkthrough, deployed contract, and verified example.
 
 ## The one line that matters
 

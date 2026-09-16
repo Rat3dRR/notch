@@ -13,3 +13,5 @@ viewer/.next/
 .superpowers/
 .remember/
 .claude/settings.local.json
+
+.vercel
