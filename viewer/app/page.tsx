@@ -396,6 +396,7 @@ export default function Page() {
             <div><dt>Cycle</dt><dd>{state?.tab?.cycle ?? 0}</dd></div>
           </dl>
         )}
+        {tab && <button onClick={() => void refresh(tab).catch(() => say("Could not refresh chain state.", "bad"))} disabled={!!busy}>Refresh chain state</button>}
       </section>
 
       <details className="walkthrough">
@@ -410,26 +411,6 @@ export default function Page() {
         <p>The swapped-evidence example is a separate integrity check: it resolves without AI judgment.
           Use the off-spec example to see decentralized judgment.</p>
       </details>
-
-      <section className="transactions" aria-label="Transaction history">
-        <h2>Transaction record</h2>
-        {state?.network.address.toLowerCase() === VERIFIED_DEMO.address.toLowerCase() && <details>
-          <summary>Verified example: off-spec claim upheld</summary>
-          <p><a href={`/?tab=${VERIFIED_DEMO.tab}`}>View the completed demo</a>. The evidence fingerprint matched,
-            validators judged the delivery terms, and the contract recorded the ruling and bond credit.
-            Verified on September 16, 2026 (UTC).</p>
-          <ol>{VERIFIED_DEMO.transactions.map((t) => <li key={t.hash}>
-            <strong>{t.label}</strong>
-            <a className="hash" href={transactionUrl(t.hash)} target="_blank" rel="noreferrer">{t.hash}</a>
-          </li>)}</ol>
-        </details>}
-        {transactions.length === 0 ? <p className="hint">No demo transactions submitted in this browser yet.</p> :
-          <ol>{transactions.map((t) => <li key={t.hash}>
-            <div><strong>{t.label}</strong><span className="hint">{t.status}</span></div>
-            <a className="hash" href={transactionUrl(t.hash)} target="_blank" rel="noreferrer">{t.hash}</a>
-          </li>)}</ol>}
-        {tab && <button onClick={() => void refresh(tab).catch(() => say("Could not refresh chain state.", "bad"))} disabled={!!busy}>Refresh chain state</button>}
-      </section>
 
       {/* -------------------------------------------------------- 2. tab */}
       {tab && state?.notches && (
@@ -675,6 +656,25 @@ export default function Page() {
         {log.length === 0 && <p className="hint">Nothing yet.</p>}
         <ol>{log.map((l, i) => <li key={i} className={l.kind}>{l.text}</li>)}</ol>
       </aside>
+
+      <details className="transactions" aria-label="Transaction history">
+        <summary>Transaction record</summary>
+        {state?.network.address.toLowerCase() === VERIFIED_DEMO.address.toLowerCase() && <details>
+          <summary>Verified example: off-spec claim upheld</summary>
+          <p><a href={`/?tab=${VERIFIED_DEMO.tab}`}>View the completed demo</a>. The evidence fingerprint matched,
+            validators judged the delivery terms, and the contract recorded the ruling and bond credit.
+            Verified on September 16, 2026 (UTC).</p>
+          <ol>{VERIFIED_DEMO.transactions.map((t) => <li key={t.hash}>
+            <strong>{t.label}</strong>
+            <a className="hash" href={transactionUrl(t.hash)} target="_blank" rel="noreferrer">{t.hash}</a>
+          </li>)}</ol>
+        </details>}
+        {transactions.length === 0 ? <p className="hint">No demo transactions submitted in this browser yet.</p> :
+          <ol>{transactions.map((t) => <li key={t.hash}>
+            <div><strong>{t.label}</strong><span className="hint">{t.status}</span></div>
+            <a className="hash" href={transactionUrl(t.hash)} target="_blank" rel="noreferrer">{t.hash}</a>
+          </li>)}</ol>}
+      </details>
 
       <footer>
         <p>
