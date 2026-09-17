@@ -369,7 +369,6 @@ export default function Page() {
           </>}
         </div>
       </header>
-      <p className="meta">By <a href="https://github.com/Rat3dRR/notch" target="_blank" rel="noreferrer">Rat3dRR + Claude</a>.</p>
 
       {/* ------------------------------------------------------ 1. start */}
       <section>
